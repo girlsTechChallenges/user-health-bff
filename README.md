@@ -324,52 +324,101 @@ src/main/java/com/fiap/user/health/bff/
 
 ## 🏃 Como Executar
 
-### Opção 1: Docker (Recomendado)
+A aplicação oferece **dois modos de execução com Docker**, cada um com seu próprio arquivo docker-compose:
 
-**Pré-requisitos:**
-- Docker Desktop instalado
-- Docker Compose instalado
+### 🐳 Modo 1: Produção Completa (docker-compose.yml)
 
-**Passos:**
-1. Clone o repositório
-2. Execute: `docker-compose up -d`
-3. Aguarde ~30 segundos
-4. Acesse: http://localhost:8080/swagger-ui.html
+**Arquivo:** `docker-compose.yml`
 
-### Opção 2: Execução Local
+**O que sobe:**
+- ✅ PostgreSQL 16 (banco de dados)
+- ✅ Aplicação Spring Boot (containerizada)
 
-**Pré-requisitos:**
-- Java 21 instalado
-- Maven instalado
-- PostgreSQL rodando
+**Quando usar:** Deploy completo, ambiente de produção, testes de integração com containers.
 
-**Passos:**
-
-1. **Configurar PostgreSQL**
-```sql
-CREATE DATABASE postgres;
-CREATE USER postgres WITH PASSWORD 'postgres';
-GRANT ALL PRIVILEGES ON DATABASE postgres TO postgres;
-```
-
-2. **Configurar application.properties**
-```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/postgres
-spring.datasource.username=postgres
-spring.datasource.password=postgres
-```
-
-3. **Compilar e Executar**
+**Executar:**
 ```bash
-# Compilar
-./mvnw clean install
+# Subir tudo (build automático da aplicação)
+docker-compose up -d
 
-# Executar
-./mvnw spring-boot:run
+# Ver logs
+docker-compose logs -f
 
-# Ou executar JAR
-java -jar target/user-health-bff-0.0.1-SNAPSHOT.jar
+# Parar
+docker-compose down
+
+# Rebuild completo
+docker-compose up -d --build
 ```
+
+**Estrutura do docker-compose.yml:**
+```yaml
+services:
+  app-db:                    # PostgreSQL 16
+    image: postgres:16-alpine
+    ports: ["5432:5432"]
+    
+  user-health-bff:           # Aplicação Spring Boot
+    build: .                 # Build do Dockerfile
+    ports: ["8080:8080"]
+    depends_on:
+      - app-db
+```
+
+**Acessar:**
+- Swagger: http://localhost:8080/swagger-ui.html
+- API: http://localhost:8080/api/users
+- Health: http://localhost:8080/actuator/health
+
+---
+
+### 🔧 Modo 2: Desenvolvimento Local (docker-compose-local.yml)
+
+**Arquivo:** `docker-compose-local.yml`
+
+**O que sobe:**
+- ✅ PostgreSQL 16 (banco de dados)
+- ❌ Aplicação roda **na IDE** (não no Docker)
+
+**Quando usar:** Desenvolvimento local com hot reload, debugging na IDE.
+
+**Executar:**
+```bash
+# 1. Subir apenas infraestrutura (PostgreSQL)
+docker-compose -f docker-compose-local.yml up -d
+
+# 2. Executar aplicação na IDE
+# - IntelliJ: Abra UserHealthMain.java → Run (Shift+F10)
+# - Eclipse: Run As → Java Application
+# - VSCode: Run Java
+
+# Parar infraestrutura
+docker-compose -f docker-compose-local.yml down
+```
+
+**Estrutura do docker-compose-local.yml:**
+```yaml
+services:
+  app-db:                    # PostgreSQL 16
+    image: postgres:16-alpine
+    ports: ["5432:5432"]
+```
+
+**Acessar:**
+- Aplicação (IDE): http://localhost:8080/swagger-ui.html
+- PostgreSQL: localhost:5432
+
+---
+
+### 🎯 Comparação dos Modos
+
+| Aspecto | Produção (`docker-compose.yml`) | Local (`docker-compose-local.yml`) |
+|---------|--------------------------------|-----------------------------------|
+| **PostgreSQL** | ✅ Container | ✅ Container |
+| **Aplicação** | ✅ Container (build) | ❌ Roda na IDE |
+| **Hot Reload** | ❌ Requer rebuild | ✅ Automático (IDE) |
+| **Debug** | ⚠️ Remoto | ✅ Nativo (IDE) |
+| **Uso** | Deploy, Testes E2E | Desenvolvimento |
 
 ---
 
@@ -484,72 +533,110 @@ DELETE /api/users/1
 
 ---
 
-## 🧪 Testes
+## 🐳 Docker - Comandos Úteis
 
-### Testes Manuais via cURL
+### Comandos Básicos
 
-#### Criar Usuário
+#### Produção (docker-compose.yml)
 ```bash
-curl -X POST http://localhost:8080/api/users \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nome": "Maria Silva",
-    "email": "maria@example.com",
-    "login": "mariasilva",
-    "senha": "senha12345678"
-  }'
+# Iniciar tudo
+docker-compose up -d
+
+# Iniciar com logs visíveis
+docker-compose up
+
+# Parar containers
+docker-compose down
+
+# Parar e remover volumes (⚠️ APAGA DADOS!)
+docker-compose down -v
+
+# Ver status
+docker-compose ps
+
+# Ver logs
+docker-compose logs -f
+
+# Logs de serviço específico
+docker-compose logs -f user-health-bff
+
+# Rebuild da aplicação
+docker-compose up -d --build user-health-bff
+
+# Restart de serviço
+docker-compose restart user-health-bff
 ```
 
-#### Listar Todos
+#### Desenvolvimento Local (docker-compose-local.yml)
 ```bash
-curl http://localhost:8080/api/users
+# Iniciar infraestrutura
+docker-compose -f docker-compose-local.yml up -d
+
+# Parar infraestrutura
+docker-compose -f docker-compose-local.yml down
+
+# Logs do PostgreSQL
+docker-compose -f docker-compose-local.yml logs -f app-db
+
+# Restart do PostgreSQL
+docker-compose -f docker-compose-local.yml restart app-db
 ```
 
-#### Buscar por ID
+### Comandos de Debug
+
 ```bash
-curl http://localhost:8080/api/users/1
+# Entrar no container da aplicação (modo produção)
+docker exec -it user-health-bff sh
+
+# Entrar no PostgreSQL
+docker exec -it user-health-db psql -U postgres
+
+# Ver uso de recursos
+docker stats
+
+# Ver IP dos containers
+docker inspect user-health-bff | grep IPAddress
+
+# Verificar health check
+docker inspect --format='{{json .State.Health}}' user-health-bff
 ```
 
-#### Atualizar
+### Limpeza e Manutenção
+
 ```bash
-curl -X PUT http://localhost:8080/api/users/1 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "maria.nova@example.com",
-    "login": "marianova",
-    "senha": "novasenha123"
-  }'
+# Limpeza leve (containers parados)
+docker system prune
+
+# Limpeza completa (⚠️ remove tudo não usado)
+docker system prune -a --volumes
+
+# Remover apenas volumes não usados
+docker volume prune
+
+# Ver espaço usado
+docker system df
+
+# Remover imagem específica
+docker rmi user-health-bff-user-health-bff
 ```
 
-#### Deletar
+### Troubleshooting Docker
+
 ```bash
-curl -X DELETE http://localhost:8080/api/users/1
+# Build com logs detalhados
+docker-compose build --no-cache --progress=plain
+
+# Verificar network
+docker network ls
+docker network inspect user-health-network
+
+# Verificar volumes
+docker volume ls
+docker volume inspect user-health-bff_postgres-data
+
+# Testar conectividade entre containers
+docker exec user-health-bff ping app-db
 ```
-
-### Cenários de Erro
-
-#### Email Duplicado (409)
-```bash
-# Criar primeiro usuário
-curl -X POST http://localhost:8080/api/users \
-  -H "Content-Type: application/json" \
-  -d '{"nome":"Pedro","email":"pedro@test.com","login":"pedro1","senha":"senha12345678"}'
-
-# Tentar criar com mesmo email
-curl -X POST http://localhost:8080/api/users \
-  -H "Content-Type: application/json" \
-  -d '{"nome":"Pedro2","email":"pedro@test.com","login":"pedro2","senha":"senha12345678"}'
-```
-
-#### Validação de Dados (400)
-```bash
-curl -X POST http://localhost:8080/api/users \
-  -H "Content-Type: application/json" \
-  -d '{"nome":"A","email":"invalido","login":"ab","senha":"123"}'
-```
-
-### Swagger UI
-Acesse http://localhost:8080/swagger-ui.html para testar interativamente.
 
 ---
 
@@ -667,6 +754,73 @@ spring:
 ## 📋 Testes Manuais via API
 
 ### Testes via cURL
+
+#### Criar Usuário
+```bash
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nome": "Maria Silva",
+    "email": "maria@example.com",
+    "login": "mariasilva",
+    "senha": "senha12345678"
+  }'
+```
+
+#### Listar Todos
+```bash
+curl http://localhost:8080/api/users
+```
+
+#### Buscar por ID
+```bash
+curl http://localhost:8080/api/users/1
+```
+
+#### Atualizar
+```bash
+curl -X PUT http://localhost:8080/api/users/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "maria.nova@example.com",
+    "login": "marianova",
+    "senha": "novasenha123"
+  }'
+```
+
+#### Deletar
+```bash
+curl -X DELETE http://localhost:8080/api/users/1
+```
+
+### Cenários de Erro
+
+#### Email Duplicado (409)
+```bash
+# Criar primeiro usuário
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"nome":"Pedro","email":"pedro@test.com","login":"pedro1","senha":"senha12345678"}'
+
+# Tentar criar com mesmo email
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"nome":"Pedro2","email":"pedro@test.com","login":"pedro2","senha":"senha12345678"}'
+```
+
+#### Validação de Dados (400)
+```bash
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"nome":"A","email":"invalido","login":"ab","senha":"123"}'
+```
+
+### Swagger UI
+Acesse http://localhost:8080/swagger-ui.html para testar interativamente.
+
+---
+
+## 🐛 Troubleshooting
 
 ### Problema: Porta 8080 em uso
 
