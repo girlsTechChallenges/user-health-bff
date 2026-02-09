@@ -1,6 +1,6 @@
 # 📚 User Health BFF - Documentação Completa
 
-> **Versão:** 1.0 | **Status:** ✅ Produção Ready | **Data:** 08/02/2026
+> **Versão:** 1.0 | **Status:** ✅ Produção Ready | **Data:** 09/02/2026
 
 ---
 
@@ -8,66 +8,58 @@
 
 1. [Visão Geral](#-visão-geral)
 2. [Quick Start](#-quick-start)
-3. [Arquitetura](#-arquitetura)
-4. [Docker](#-docker)
+3. [Autenticação JWT](#-autenticação-jwt)
+4. [Arquitetura](#-arquitetura)
 5. [Como Executar](#-como-executar)
 6. [API Endpoints](#-api-endpoints)
 7. [Testes](#-testes)
-8. [Troubleshooting](#-troubleshooting)
-9. [Roadmap](#-roadmap)
+8. [Testes Manuais via API](#-testes-manuais-via-api)
+9. [Troubleshooting](#-troubleshooting)
+10. [Roadmap](#-roadmap)
 
 ---
 
 ## 🎯 Visão Geral
 
 ### Descrição
-Backend for Frontend (BFF) para gerenciamento de usuários com CRUD completo, validações, tratamento de exceções e documentação Swagger integrada.
+Backend for Frontend (BFF) para gerenciamento de usuários com CRUD completo, autenticação JWT, validações robustas, tratamento de exceções e documentação Swagger integrada.
 
 ### Tecnologias
 - **Java 21**
 - **Spring Boot 4.0.2**
 - **Spring Data JPA**
+- **Spring Security** com OAuth2 Resource Server
 - **PostgreSQL 42.7.3**
+- **JWT com RSA (RS256)**
+- **BCrypt** para hash de senhas
 - **Lombok**
 - **SpringDoc OpenAPI 2.7.0** (Swagger)
 - **Bean Validation**
 - **Docker & Docker Compose**
-- **Micrometer Tracing** (Observabilidade)
-- **Zipkin** (Distributed Tracing)
+- **JUnit 5 + Mockito** para testes
 
 ### Funcionalidades
 ✅ CRUD completo de usuários  
-✅ **Autenticação JWT com RSA**  
+✅ **Autenticação JWT com RSA (RS256)**  
 ✅ **Criptografia de senhas com BCrypt**  
-✅ **Endpoints protegidos com Spring Security**  
+✅ **Spring Security com endpoints públicos e protegidos**  
+✅ **Atualização de senha** (PATCH /api/v1/auth/password)  
 ✅ Validações de entrada (Bean Validation)  
 ✅ Tratamento de exceções centralizado  
-✅ Documentação Swagger/OpenAPI  
-✅ Docker configurado  
-✅ Health checks e métricas  
+✅ Documentação Swagger/OpenAPI completa  
+✅ Docker Compose para desenvolvimento e produção  
+✅ Health checks e métricas (Spring Actuator)  
 ✅ Persistência com PostgreSQL  
-✅ **Observabilidade nativa Spring Boot com Zipkin**  
-✅ **Distributed Tracing automático**  
-✅ **Métricas Prometheus**  
-✅ **Logging estruturado com TraceID**  
+✅ **Testes unitários e de integração**  
 
 ---
 
 ## 🚀 Quick Start
 
-> ⚠️ **IMPORTANTE:** Se você acabou de fazer alterações nos arquivos de configuração, execute um **rebuild completo**:
-> ```bash
-> docker-compose down
-> docker rmi user-health-bff-user-health-bff -f
-> docker-compose build --no-cache user-health-bff
-> docker-compose up -d
-> ```
-> Sem isso, o Docker pode usar uma imagem antiga com configuração incorreta!
-
-### 🔧 Modo 1: Desenvolvimento na IDE (Perfil LOCAL)
+### 🔧 Modo 1: Desenvolvimento Local (Perfil LOCAL)
 
 ```bash
-# 1. Subir infraestrutura no Docker
+# 1. Subir infraestrutura (PostgreSQL)
 docker-compose -f docker-compose-local.yml up -d
 
 # 2. Executar aplicação na IDE
@@ -88,36 +80,40 @@ docker-compose up -d
 - **API REST:** http://localhost:8080/api/users
 - **Health Check:** http://localhost:8080/actuator/health
 - **Metrics:** http://localhost:8080/actuator/metrics
-- **Zipkin UI (Traces):** http://localhost:9411
-- **Prometheus Metrics:** http://localhost:8080/actuator/prometheus
 
 ### Teste Rápido
 ```bash
 # Health check
 curl http://localhost:8080/actuator/health
 
-# Criar usuário
+# Criar usuário (público - não requer autenticação)
 curl -X POST http://localhost:8080/api/users \
   -H "Content-Type: application/json" \
   -d '{"nome":"João Silva","email":"joao@test.com","login":"joaosilva","senha":"senha12345678"}'
 
-# Listar usuários
-curl http://localhost:8080/api/users
+# Login e obter JWT token
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"joao@test.com","password":"senha12345678"}'
+
+# Listar usuários (protegido - requer token)
+curl -H "Authorization: Bearer SEU_TOKEN_AQUI" http://localhost:8080/api/users
 ```
 
 ---
 
 ## 🔐 Autenticação JWT
 
-### Autenticação Implementada
+### Visão Geral
 
-A aplicação possui autenticação completa com **JWT (JSON Web Tokens)** e **Spring Security**.
+A aplicação possui autenticação completa com **JWT (JSON Web Tokens)** usando **Spring Security** e assinatura **RSA (RS256)**.
 
-### Componentes
+### Componentes de Segurança
 - **Spring Security** - Framework de autenticação e autorização
-- **JWT com RSA** - Tokens assinados com chaves RSA
-- **BCrypt** - Hash de senhas com salt automático
 - **OAuth2 Resource Server** - Validação de tokens JWT
+- **JWT com RSA** - Tokens assinados com chaves RSA (RS256)
+- **BCrypt** - Hash de senhas com salt automático (10 rounds)
+- **Session Stateless** - Sem estado de sessão (escalável)
 
 ### Endpoints de Autenticação
 
@@ -132,7 +128,7 @@ Content-Type: application/json
 }
 ```
 
-**Resposta:** Token JWT válido por 1 hora
+**Resposta:** Token JWT válido
 ```json
 {
   "accessToken": "eyJhbGciOiJSUzI1NiJ9...",
@@ -140,7 +136,20 @@ Content-Type: application/json
 }
 ```
 
-#### 2. Usar Token em Requisições
+#### 2. Atualizar Senha (Público)
+```bash
+PATCH /api/v1/auth/password
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "novaSenha123456"
+}
+```
+
+**Resposta:** 204 No Content
+
+#### 3. Usar Token em Requisições Protegidas
 ```bash
 GET /api/users
 Authorization: Bearer eyJhbGciOiJSUzI1NiJ9...
@@ -148,15 +157,19 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiJ9...
 
 ### Proteção de Endpoints
 
-| Endpoint | Público | Protegido |
-|----------|---------|-----------|
-| POST /api/v1/auth/login | ✅ Sim | ❌ Não |
-| POST /api/v1/users | ✅ Sim | ❌ Não |
-| GET /api/users | ❌ Não | ✅ Sim |
-| PUT /api/users/{id} | ❌ Não | ✅ Sim |
-| DELETE /api/users/{id} | ❌ Não | ✅ Sim |
+| Endpoint | Público | Protegido | Descrição |
+|----------|---------|-----------|-----------|
+| POST /api/v1/auth/login | ✅ Sim | ❌ Não | Login de usuário |
+| PATCH /api/v1/auth/password | ✅ Sim | ❌ Não | Atualizar senha |
+| POST /api/users | ✅ Sim | ❌ Não | Criar usuário |
+| GET /api/users | ❌ Não | ✅ Sim | Listar usuários |
+| GET /api/users/{id} | ❌ Não | ✅ Sim | Buscar usuário |
+| PUT /api/users/{id} | ❌ Não | ✅ Sim | Atualizar usuário |
+| DELETE /api/users/{id} | ❌ Não | ✅ Sim | Deletar usuário |
+| GET /actuator/health | ✅ Sim | ❌ Não | Health check |
+| GET /swagger-ui.html | ✅ Sim | ❌ Não | Documentação |
 
-### Segurança
+### Segurança Implementada
 
 ✅ **Senhas criptografadas** com BCrypt (10 rounds)  
 ✅ **JWT assinado** com RSA (RS256)  
@@ -164,131 +177,56 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiJ9...
 ✅ **Session stateless** (escalável)  
 ✅ **CORS configurado**  
 ✅ **Exception handling** completo  
+✅ **Chaves RSA** em arquivos separados (app.pub e app.key)
 
 ### Fluxo de Autenticação
 
 ```
-1. Criar usuário (POST /api/v1/users)
+1. Criar usuário (POST /api/users)
    → Senha criptografada com BCrypt
+   → Usuário salvo no banco
 
 2. Login (POST /api/v1/auth/login)  
    → Valida email/senha
-   → Gera JWT token
+   → Gera JWT token com RSA
    → Retorna token + expiração
 
 3. Requisições protegidas
    → Header: Authorization: Bearer <token>
-   → Spring Security valida token
+   → Spring Security valida assinatura RSA
+   → Extrai informações do token
    → Permite ou nega acesso
 ```
 
-📖 **Documentação completa:** [AUTENTICACAO.md](AUTENTICACAO.md)
+### Exemplo Completo
 
----
-
-## 🔍 Observabilidade
-
-### Stack de Observabilidade Implementada
-
-A aplicação possui observabilidade completa com:
-
-- **OpenTelemetry** - Instrumentação e coleta de telemetria
-- **OpenTelemetry Collector** - Processamento e roteamento de dados
-- **Jaeger** - Visualização de traces distribuídos
-- **Micrometer** - Bridge para métricas e tracing
-- **Prometheus** - Métricas exportadas
-
-### Arquitetura
-
-```
-Spring Boot App → Zipkin (Traces Visualization)
-                → Prometheus Metrics (via Actuator)
-```
-
-### URLs de Observabilidade
-
-- **Zipkin UI:** http://localhost:9411
-- **Prometheus Metrics:** http://localhost:8080/actuator/prometheus
-
-### Como Usar
-
-1. **Iniciar com observabilidade:**
 ```bash
-docker-compose up -d
-```
-
-2. **Gerar tráfego:**
-```bash
-# Criar usuários e fazer operações
+# 1. Criar usuário
 curl -X POST http://localhost:8080/api/users \
   -H "Content-Type: application/json" \
-  -d '{"nome":"Test","email":"test@test.com","login":"test","senha":"password123"}'
+  -d '{
+    "nome": "João Silva",
+    "email": "joao@example.com",
+    "login": "joaosilva",
+    "senha": "senha12345678"
+  }'
+
+# 2. Fazer login
+TOKEN=$(curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "joao@example.com",
+    "password": "senha12345678"
+  }' | jq -r '.accessToken')
+
+# 3. Usar token em requisições protegidas
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/users
 ```
-
-3. **Visualizar traces:**
-- Abra http://localhost:9411
-- Clique em **"Run Query"** ou busque por service name
-- Explore os traces das suas requisições
-
-### O Que Você Verá
-
-✅ **Traces completos** de cada requisição HTTP  
-✅ **Spans** individuais (Controller → Service → Repository → Database)  
-✅ **Latências** de cada operação  
-✅ **Queries SQL** executadas  
-✅ **Erros e exceções** com stack trace  
-✅ **TraceID e SpanID** nos logs da aplicação  
-✅ **Tags e logs** contextuais  
-
-### Exemplo de Trace
-
-```
-POST /api/users (201 Created) - 150ms
-  └─ Controller.createUser - 148ms
-      └─ UserServiceImpl.createUser (@Observed) - 145ms
-          ├─ UserRepository.findByEmail - 25ms
-          │   └─ PostgreSQL: SELECT ... - 23ms
-          └─ UserRepository.save - 115ms
-              └─ PostgreSQL: INSERT ... - 112ms
-```
-
-### Configurações
-
-**application.yml:**
-```yaml
-management:
-  tracing:
-    sampling:
-      probability: 1.0  # 100% em dev, ajustar para 0.1 (10%) em produção
-  zipkin:
-    tracing:
-      endpoint: http://zipkin:9411/api/v2/spans
-```
-
-### 📚 Documentação Completa de Observabilidade
-
-- 📖 **[OBSERVABILITY.md](./OBSERVABILITY.md)** - Guia completo de observabilidade com Spring Boot e Zipkin
-- 🔄 **[MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md)** - Guia de migração de OpenTelemetry para Micrometer + Zipkin
-management.otlp.tracing.endpoint=http://otel-collector:4318/v1/traces
-logging.pattern.level=%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]
-```
-
-**Sampling Rate:**
-- Desenvolvimento: `1.0` (100% dos traces)
-- Produção: `0.1` a `0.2` (10-20% dos traces)
-
-### Métricas Disponíveis
-
-- `http_server_requests_seconds` - Latência HTTP
-- `jvm_memory_used_bytes` - Memória JVM
-- `hikaricp_connections` - Pool de conexões
-- `system_cpu_usage` - Uso de CPU
-
-📖 **Documentação completa:** [OBSERVABILIDADE.md](OBSERVABILIDADE.md)
 
 ---
 
-## 🏃 Como Executar
+## 🏗️ Arquitetura
 
 ### Estrutura de Camadas
 
@@ -306,6 +244,7 @@ logging.pattern.level=%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-
 │  - Regras de negócio                    │
 │  - Validações customizadas              │
 │  - Transações (@Transactional)          │
+│  - Autenticação JWT                     │
 └──────────────┬──────────────────────────┘
                │
                ↓
@@ -328,33 +267,44 @@ logging.pattern.level=%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-
 src/main/java/com/fiap/user/health/bff/
 ├── UserHealthMain.java              # Main application
 ├── config/
-│   └── OpenApiConfig.java          # Swagger configuration
+│   ├── OpenApiConfig.java          # Swagger configuration
+│   └── SecurityConfig.java         # Spring Security + JWT
 ├── controller/
-│   ├── Controller.java             # REST endpoints
-│   └── UserControllerDocs.java     # Swagger documentation
+│   ├── UserController.java         # CRUD endpoints
+│   ├── AuthController.java         # Authentication endpoints
+│   └── docs/                       # Swagger documentation
 ├── dto/
 │   ├── request/
 │   │   ├── UserRequestDto.java     # Create user DTO
-│   │   └── UserUpdateRequestDto.java # Update user DTO
+│   │   ├── UserUpdateRequestDto.java # Update user DTO
+│   │   ├── UserCredentialsRequestDto.java # Login DTO
+│   │   └── UserAuthRequestDto.java # Token response DTO
 │   └── response/
-│       └── UserResponseDto.java     # Response DTO
+│       └── UserResponseDto.java     # User response DTO
 ├── exception/
 │   ├── ApiErrorMessage.java         # Error response structure
 │   ├── EmailAlreadyExistsException.java
 │   ├── UserNotFoundException.java
+│   ├── JwtAuthenticationEntryPoint.java
+│   ├── JwtAccessDeniedHandler.java
 │   └── GlobalExceptionHandler.java  # Exception handler
 ├── mapper/
 │   └── UserMapper.java              # DTO/Entity conversions
 ├── model/
-│   └── User.java                    # Domain model
+│   ├── User.java                    # Domain model
+│   └── Token.java                   # JWT token model
 ├── persistence/
 │   ├── entity/
 │   │   └── UserEntity.java         # JPA entity
 │   └── repository/
 │       └── UserRepository.java      # JPA repository
 └── service/
-    ├── UserServiceInterface.java
-    └── UserServiceImpl.java         # Business logic
+    ├── user/
+    │   ├── UserServiceInterface.java
+    │   └── UserServiceImpl.java     # User business logic
+    └── auth/
+        ├── AuthServiceInterface.java
+        └── AuthServiceImpl.java     # Authentication logic
 ```
 
 ### Padrões de Projeto Utilizados
@@ -368,63 +318,7 @@ src/main/java/com/fiap/user/health/bff/
 | **Builder Pattern** | Construção de objetos (Lombok) |
 | **Dependency Injection** | Injeção via construtor |
 | **Exception Handler Pattern** | Tratamento centralizado |
-
----
-
-## 🐳 Docker
-
-
-### Comandos Docker
-
-#### Básico
-```bash
-# Iniciar
-docker-compose up -d
-
-# Parar
-docker-compose down
-
-# Logs
-docker-compose logs -f
-
-# Status
-docker-compose ps
-
-# Reiniciar
-docker-compose restart
-
-# Rebuild
-docker-compose up -d --build
-```
-
-#### Debug
-```bash
-# Entrar no container da aplicação
-docker exec -it user-health-bff sh
-
-# Entrar no PostgreSQL
-docker exec -it user-health-db psql -U postgres
-
-# Ver uso de recursos
-docker stats
-
-# Logs específicos
-docker-compose logs -f user-health-bff
-docker-compose logs -f app-db
-```
-
-#### Limpeza
-```bash
-# Parar e manter volumes
-docker-compose down
-
-# Parar e remover volumes (APAGA DADOS!)
-docker-compose down -v
-
-# Limpeza completa do Docker
-docker system prune -a --volumes
-```
-
+| **Strategy Pattern** | Services com interfaces |
 
 ---
 
@@ -632,27 +526,6 @@ curl -X PUT http://localhost:8080/api/users/1 \
 curl -X DELETE http://localhost:8080/api/users/1
 ```
 
-### Testes via PowerShell (Windows)
-
-```powershell
-# Criar usuário
-$body = @{
-    nome = "João Santos"
-    email = "joao@example.com"
-    login = "joaosantos"
-    senha = "senha12345678"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Uri "http://localhost:8080/api/users" `
-  -Method Post -ContentType "application/json" -Body $body
-
-# Listar todos
-Invoke-RestMethod -Uri "http://localhost:8080/api/users" -Method Get
-
-# Buscar por ID
-Invoke-RestMethod -Uri "http://localhost:8080/api/users/1" -Method Get
-```
-
 ### Cenários de Erro
 
 #### Email Duplicado (409)
@@ -680,7 +553,120 @@ Acesse http://localhost:8080/swagger-ui.html para testar interativamente.
 
 ---
 
-## 🐛 Troubleshooting
+## 🧪 Testes
+
+### Estrutura de Testes
+
+A aplicação possui cobertura completa de testes:
+
+```
+src/test/java/com/fiap/user/health/bff/
+├── UserHealthBffE2ETest.java              # Testes E2E completos
+├── controller/
+│   ├── AuthControllerIntegrationTest.java # Testes do controller de autenticação
+│   └── UserControllerIntegrationTest.java # Testes do controller de usuários
+├── service/
+│   ├── auth/
+│   │   └── AuthServiceImplTest.java       # Testes unitários do serviço de auth
+│   └── user/
+│       └── UserServiceImplTest.java       # Testes unitários do serviço de usuário
+├── persistence/repository/
+│   └── UserRepositoryIntegrationTest.java # Testes de integração do repositório
+├── mapper/
+│   └── UserMapperTest.java                # Testes do mapper
+└── integration/
+    └── RealIntegrationTest.java           # Testes de integração reais
+```
+
+### Tipos de Testes
+
+| Tipo | Quantidade | Testes | Descrição |
+|------|-----------|--------|-----------|
+| **Testes E2E** | 1 classe | 12 testes | Testes completos de ponta a ponta |
+| **Testes de Integração** | 4 classes | 47 testes | Controllers, Repository, Integration |
+| **Testes Unitários** | 3 classes | 26 testes | Services e Mappers |
+| **TOTAL** | **8 classes** | **85 testes** | Cobertura completa da aplicação |
+
+### Executar Testes
+
+#### Todos os testes
+```bash
+# Maven Wrapper (Windows)
+./mvnw.cmd test
+
+# Maven Wrapper (Linux/Mac)
+./mvnw test
+
+# Maven instalado
+mvn test
+```
+
+#### Testes específicos
+```bash
+# Apenas testes unitários
+./mvnw test -Dtest=*ServiceImplTest
+
+# Apenas testes de integração
+./mvnw test -Dtest=*IntegrationTest
+
+# Apenas testes E2E
+./mvnw test -Dtest=UserHealthBffE2ETest
+
+# Teste específico
+./mvnw test -Dtest=UserServiceImplTest#shouldCreateUserSuccessfully
+```
+
+#### Testes com relatórios
+```bash
+# Gerar relatório de cobertura
+./mvnw clean test jacoco:report
+
+# Ver relatório
+# target/site/jacoco/index.html
+```
+
+### Tecnologias de Teste
+
+- **JUnit 5** - Framework de testes
+- **Mockito** - Mocks e stubs
+- **Spring Boot Test** - Testes de integração
+- **MockMvc** - Testes de controllers
+- **H2 Database** - Banco em memória para testes
+- **@SpringBootTest** - Contexto completo da aplicação
+- **@WebMvcTest** - Testes focados em controllers
+- **@DataJpaTest** - Testes focados em JPA
+
+### Perfil de Teste
+
+Os testes usam o perfil `test` com H2 in-memory:
+
+**application-test.yml:**
+```yaml
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+```
+
+### Exemplos de Testes Implementados
+
+✅ **CRUD completo** - Criar, Listar, Buscar, Atualizar, Deletar  
+✅ **Validações** - Campos obrigatórios, formatos, tamanhos  
+✅ **Exceções** - Email duplicado, usuário não encontrado  
+✅ **Autenticação** - Login, tokens JWT, endpoints protegidos  
+✅ **Segurança** - Acesso negado, autenticação obrigatória  
+✅ **Repository** - Queries customizadas, findByEmail  
+✅ **Mapper** - Conversões DTO ↔ Entity  
+✅ **Integration** - Fluxos completos de ponta a ponta
+
+---
+
+## 📋 Testes Manuais via API
+
+### Testes via cURL
 
 ### Problema: Porta 8080 em uso
 
@@ -749,36 +735,34 @@ docker-compose logs app-db
 
 ### ✅ Implementado (v1.0)
 - CRUD completo de usuários
+- Autenticação JWT com RSA (RS256)
+- Criptografia de senhas com BCrypt
+- Spring Security com endpoints protegidos
 - Validações de entrada (Bean Validation)
 - Tratamento de exceções centralizado
-- Documentação Swagger/OpenAPI
-- Docker e Docker Compose
+- Documentação Swagger/OpenAPI completa
+- Docker e Docker Compose (prod e local)
 - Health checks e métricas
-- Documentação completa
-- **Observabilidade com OpenTelemetry e Jaeger**
-- **Distributed Tracing completo**
-- **Métricas Prometheus**
+- Testes unitários e de integração
 
 ### 🔵 Curto Prazo (v1.1 - v1.2)
-- [ ] Testes unitários (JUnit + Mockito)
-- [ ] Testes de integração (TestContainers)
-- [ ] BCrypt para hash de senhas
-- [ ] Spring Security básico
-- [ ] Cobertura de código 80%+
+- [ ] Paginação e ordenação nos endpoints
+- [ ] Filtros de busca avançados
+- [ ] Cobertura de código 90%+
+- [ ] CI/CD pipeline (GitHub Actions)
+- [ ] Auditoria (created_at, updated_at)
 
 ### 🟢 Médio Prazo (v2.0)
-- [ ] Paginação e ordenação
-- [ ] Filtros de busca
 - [ ] Cache com Redis
 - [ ] Soft delete
-- [ ] Auditoria (created_at, updated_at)
-- [ ] JWT para autenticação
+- [ ] Rate limiting
+- [ ] Integração com OpenTelemetry e Jaeger
+- [ ] Métricas Prometheus customizadas
 
 ### 🟡 Longo Prazo (v3.0+)
 - [ ] Event sourcing
 - [ ] CQRS pattern
 - [ ] Mensageria (Kafka/RabbitMQ)
-- [ ] CI/CD completo
 - [ ] Observabilidade avançada
 - [ ] LGPD/GDPR compliance
 
@@ -786,28 +770,27 @@ docker-compose logs app-db
 
 ## 📊 Boas Práticas Implementadas
 
-✅ Separação de camadas (Controller/Service/Repository)  
-✅ DTOs para entrada e saída  
-✅ Validação em múltiplas camadas  
-✅ Tratamento centralizado de exceções  
-✅ Transações com @Transactional  
-✅ Documentação OpenAPI/Swagger  
-✅ Lombok para reduzir boilerplate  
-✅ Builder pattern  
-✅ Repository pattern  
-✅ Senha não exposta nas respostas  
-✅ Validação de email único  
-✅ Mensagens de erro padronizadas  
-✅ Docker para deploy fácil  
-✅ Health checks  
-✅ Código limpo e manutenível  
-✅ **Autenticação JWT com RSA**  
-✅ **Senhas criptografadas com BCrypt**  
-✅ **Spring Security configurado**  
-✅ **Endpoints protegidos**  
-✅ **Observabilidade com OpenTelemetry**  
-✅ **Distributed Tracing com Jaeger**  
-✅ **Métricas com Prometheus**  
+✅ **Arquitetura em camadas** (Controller/Service/Repository)  
+✅ **DTOs** para entrada e saída (separação de concerns)  
+✅ **Validação Bean Validation** (@Valid, @NotNull, @Email, etc)  
+✅ **Tratamento centralizado de exceções** (GlobalExceptionHandler)  
+✅ **Transações** com @Transactional  
+✅ **Documentação OpenAPI/Swagger** completa e interativa  
+✅ **Lombok** para reduzir boilerplate  
+✅ **Design Patterns** (Builder, Repository, Strategy)  
+✅ **Senha não exposta** nas respostas JSON  
+✅ **Validação de email único** no banco  
+✅ **Mensagens de erro padronizadas** (ApiErrorMessage)  
+✅ **Docker multi-stage build** otimizado  
+✅ **Health checks** em todos os containers  
+✅ **Código limpo e manutenível**  
+✅ **Autenticação JWT com RSA (RS256)**  
+✅ **Senhas criptografadas com BCrypt (10 rounds)**  
+✅ **Spring Security** configurado corretamente  
+✅ **Endpoints públicos e protegidos** bem definidos  
+✅ **CORS** configurado  
+✅ **Session stateless** (escalável)  
+✅ **Testes unitários e de integração** (JUnit 5 + Mockito)  
 
 ---
 
@@ -825,7 +808,7 @@ docker-compose logs app-db
 ### Equipe
 - **Desenvolvido por:** Tech Challenge Team - FIAP
 - **Versão:** 1.0
-- **Data:** 08/02/2026
+- **Data:** 09/02/2026
 
 ---
 
@@ -835,7 +818,7 @@ Este projeto é parte de um desafio técnico educacional - FIAP Tech Challenge.
 
 ---
 
-**🎉 Documentação completa em um único arquivo!**
+**🎉 README único e objetivo - Documentação completa da aplicação!**
 
 _Desenvolvido com ❤️ pela equipe Tech Challenge_
 
